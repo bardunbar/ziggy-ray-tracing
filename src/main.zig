@@ -1,71 +1,40 @@
-const std = @import("std");
-const Io = std.Io;
+const rl = @import("raylib");
 
-const ziggy_ray_tracing = @import("ziggy_ray_tracing");
+pub fn main() void {
+    const screen_width = 800;
+    const screen_height = 600;
 
-pub fn main(init: std.process.Init) !void {
-    // Prints to stderr, unbuffered, ignoring potential errors.
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
+    rl.initWindow(screen_width, screen_height, "Ziggy Ray Tracing!");
+    defer rl.closeWindow();
 
-    // This is appropriate for anything that lives as long as the process.
-    const arena: std.mem.Allocator = init.arena.allocator();
+    var screenImage = rl.genImageColor(screen_width, screen_width, rl.Color.black);
+    defer rl.unloadImage(screenImage);
 
-    // Accessing command line arguments:
-    const args = try init.minimal.args.toSlice(arena);
-    for (args) |arg| {
-        std.log.info("arg: {s}", .{arg});
+    // Initialize the screen image for testing
+    for (0..screen_height) |y| {
+        for (0..screen_width) |x| {
+            const normalized_x = @as(f64, @floatFromInt(x)) / @as(f64, @floatFromInt(screen_width));
+            const normalized_y = @as(f64, @floatFromInt(y)) / @as(f64, @floatFromInt(screen_height));
+            const r = @as(u8, @trunc(normalized_x * 255.99));
+            const g = @as(u8, @trunc(normalized_y * 255.99));
+
+            rl.imageDrawPixel(&screenImage, @intCast(x), @intCast(y), rl.Color.init(r, g, 50, 255));
+        }
     }
 
-    // In order to do I/O operations need an `Io` instance.
-    const io = init.io;
-
-    // Stdout is for the actual output of your application, for example if you
-    // are implementing gzip, then only the compressed bytes should be sent to
-    // stdout, not any debugging messages.
-    var stdout_buffer: [1024]u8 = undefined;
-    var stdout_file_writer: Io.File.Writer = .init(.stdout(), io, &stdout_buffer);
-    const stdout_writer = &stdout_file_writer.interface;
-
-    try ziggy_ray_tracing.printAnotherMessage(stdout_writer);
-
-    try stdout_writer.flush(); // Don't forget to flush!
-}
-
-test "simple test" {
-    const gpa = std.testing.allocator;
-    var list: std.ArrayList(i32) = .empty;
-    defer list.deinit(gpa); // Try commenting this out and see if zig detects the memory leak!
-    try list.append(gpa, 42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
-}
-
-test "fuzz example" {
-    try std.testing.fuzz({}, testOne, .{});
-}
-
-fn testOne(context: void, smith: *std.testing.Smith) !void {
-    _ = context;
-    // Try passing `--fuzz` to `zig build test` and see if it manages to fail this test case!
-
-    const gpa = std.testing.allocator;
-    var list: std.ArrayList(u8) = .empty;
-    defer list.deinit(gpa);
-    while (!smith.eos()) switch (smith.value(enum { add_data, dup_data })) {
-        .add_data => {
-            const slice = try list.addManyAsSlice(gpa, smith.value(u4));
-            smith.bytes(slice);
-        },
-        .dup_data => {
-            if (list.items.len == 0) continue;
-            if (list.items.len > std.math.maxInt(u32)) return error.SkipZigTest;
-            const len = smith.valueRangeAtMost(u32, 1, @min(32, list.items.len));
-            const off = smith.valueRangeAtMost(u32, 0, @intCast(list.items.len - len));
-            try list.appendSlice(gpa, list.items[off..][0..len]);
-            try std.testing.expectEqualSlices(
-                u8,
-                list.items[off..][0..len],
-                list.items[list.items.len - len ..],
-            );
-        },
+    const screenTexture = rl.loadTextureFromImage(screenImage) catch {
+        return;
     };
+    defer rl.unloadTexture(screenTexture);
+
+    while (!rl.windowShouldClose()) {
+        {
+            rl.beginDrawing();
+            defer rl.endDrawing();
+
+            rl.clearBackground(rl.Color.black);
+            //rl.drawText("Ziggy Ray Tracing!", 300, 200, 40, rl.Color.green);
+            rl.drawTexture(screenTexture, 0, 0, rl.Color.white);
+        }
+    }
 }
