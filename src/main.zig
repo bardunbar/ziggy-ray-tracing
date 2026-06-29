@@ -4,7 +4,20 @@ const math = @import("math.zig");
 const Vec3 = math.Vec3;
 const Ray = math.Ray;
 
+fn hit_sphere(center: Vec3, radius: f32, r: Ray) bool {
+    const oc = Vec3.subtract(r.origin(), center);
+    const a = Vec3.dot(r.direction(), r.direction());
+    const b = 2.0 * Vec3.dot(oc, r.direction());
+    const c = Vec3.dot(oc, oc) - radius * radius;
+    const discriminant = b * b - 4 * a * c;
+
+    return discriminant > 0;
+}
+
 fn color(r: Ray) Vec3 {
+    if (hit_sphere(Vec3.init(0.0, 0.0, -1.0), 0.5, r)) {
+        return Vec3.init(1.0, 0.0, 0.0);
+    }
     const normalized = r.direction().normalized();
     const t: f32 = 0.5 * (normalized.y() + 1.0);
     return Vec3.add(
@@ -14,7 +27,7 @@ fn color(r: Ray) Vec3 {
 }
 
 pub fn main() void {
-    const screen_width = 800;
+    const screen_width = 1200;
     const screen_height = 600;
 
     rl.initWindow(screen_width, screen_height, "Ziggy Ray Tracing!");
