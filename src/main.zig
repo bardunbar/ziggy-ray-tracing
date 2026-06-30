@@ -24,7 +24,7 @@ fn color(r: Ray) Vec3 {
         const t = hit_sphere(center, 0.5, r);
 
         if (t > 0.0) {
-            const N = Vec3.subtract(r.evaluate(t), center);
+            const N = Vec3.subtract(r.evaluate(t), center).normalized();
             return Vec3.multiply_scalar(Vec3.add(Vec3.splat(1.0), N), 0.5);
         }
     }
