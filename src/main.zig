@@ -1,3 +1,4 @@
+const std = @import("std");
 const rl = @import("raylib");
 
 const math = @import("math.zig");
@@ -7,6 +8,9 @@ const Ray = math.Ray;
 const tracing = @import("tracing.zig");
 const World = tracing.World;
 const HitRecord = tracing.HitRecord;
+
+const camera = @import("camera.zig");
+const Camera = camera.Camera;
 
 fn hit_sphere(center: Vec3, radius: f32, r: Ray) f32 {
     const oc = Vec3.subtract(r.origin(), center);
@@ -40,17 +44,15 @@ fn color(r: Ray, world: World) Vec3 {
 pub fn main() void {
     const screen_width = 1200;
     const screen_height = 600;
+    const sample_count = 10;
+
+    var prng = std.Random.DefaultPrng.init(0);
 
     rl.initWindow(screen_width, screen_height, "Ziggy Ray Tracing!");
     defer rl.closeWindow();
 
     var screenImage = rl.genImageColor(screen_width, screen_width, rl.Color.black);
     defer rl.unloadImage(screenImage);
-
-    const upper_left_corner = Vec3.init(-2.0, 1.0, -1.0);
-    const horizontal = Vec3.init(4.0, 0.0, 0.0);
-    const vertical = Vec3.init(0.0, -2.0, 0.0);
-    const origin = Vec3.splat(0.0);
 
     var world = tracing.World.init();
 
@@ -64,24 +66,25 @@ pub fn main() void {
         .radius = 100,
     });
 
+    const cam = Camera{
+        .upper_left_corner = Vec3.init(-2.0, 1.0, -1.0),
+        .horizontal = Vec3.init(4.0, 0.0, 0.0),
+        .vertical = Vec3.init(0.0, -2.0, 0.0),
+        .origin = Vec3.splat(0.0),
+    };
+
     // Initialize the screen image for testing
     for (0..screen_height) |y| {
         for (0..screen_width) |x| {
-            const u = @as(f32, @floatFromInt(x)) / @as(f32, @floatFromInt(screen_width));
-            const v = @as(f32, @floatFromInt(y)) / @as(f32, @floatFromInt(screen_height));
+            var col = Vec3.splat(0);
+            for (0..sample_count) |_| {
+                const u = (@as(f32, @floatFromInt(x)) + prng.random().float(f32)) / @as(f32, @floatFromInt(screen_width));
+                const v = (@as(f32, @floatFromInt(y)) + prng.random().float(f32)) / @as(f32, @floatFromInt(screen_height));
+                const ray = cam.get_ray(u, v);
+                col = Vec3.add(col, color(ray, world));
+            }
 
-            const ray = Ray.init(
-                origin,
-                Vec3.add(
-                    upper_left_corner,
-                    Vec3.add(
-                        Vec3.multiply_scalar(horizontal, u),
-                        Vec3.multiply_scalar(vertical, v),
-                    ),
-                ),
-            );
-
-            const col = color(ray, world);
+            col = Vec3.divide_scalar(col, @as(f32, @floatFromInt(sample_count)));
 
             const r = @as(u8, @trunc(col.r() * 255.99));
             const g = @as(u8, @trunc(col.g() * 255.99));
