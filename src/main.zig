@@ -1,8 +1,12 @@
 const rl = @import("raylib");
-const math = @import("math.zig");
 
+const math = @import("math.zig");
 const Vec3 = math.Vec3;
 const Ray = math.Ray;
+
+const tracing = @import("tracing.zig");
+const World = tracing.World;
+const HitRecord = tracing.HitRecord;
 
 fn hit_sphere(center: Vec3, radius: f32, r: Ray) f32 {
     const oc = Vec3.subtract(r.origin(), center);
@@ -18,23 +22,19 @@ fn hit_sphere(center: Vec3, radius: f32, r: Ray) f32 {
     }
 }
 
-fn color(r: Ray) Vec3 {
-    {
-        const center = Vec3.init(0.0, 0.0, -1.0);
-        const t = hit_sphere(center, 0.5, r);
+fn color(r: Ray, world: World) Vec3 {
+    var record = HitRecord.init();
 
-        if (t > 0.0) {
-            const N = Vec3.subtract(r.evaluate(t), center).normalized();
-            return Vec3.multiply_scalar(Vec3.add(Vec3.splat(1.0), N), 0.5);
-        }
+    if (world.trace(r, &record)) {
+        return Vec3.multiply_scalar(Vec3.add(Vec3.splat(1.0), record.normal), 0.5);
+    } else {
+        const normalized = r.direction().normalized();
+        const t: f32 = 0.5 * (normalized.y() + 1.0);
+        return Vec3.add(
+            Vec3.multiply_scalar(Vec3.splat(1.0), (1.0 - t)),
+            Vec3.multiply_scalar(Vec3.init(0.5, 0.7, 1.0), t),
+        );
     }
-
-    const normalized = r.direction().normalized();
-    const t: f32 = 0.5 * (normalized.y() + 1.0);
-    return Vec3.add(
-        Vec3.multiply_scalar(Vec3.splat(1.0), (1.0 - t)),
-        Vec3.multiply_scalar(Vec3.init(0.5, 0.7, 1.0), t),
-    );
 }
 
 pub fn main() void {
@@ -51,6 +51,18 @@ pub fn main() void {
     const horizontal = Vec3.init(4.0, 0.0, 0.0);
     const vertical = Vec3.init(0.0, -2.0, 0.0);
     const origin = Vec3.splat(0.0);
+
+    var world = tracing.World.init();
+
+    world.add_sphere(.{
+        .center = Vec3.init(0.0, 0.0, -1.0),
+        .radius = 0.5,
+    });
+
+    world.add_sphere(.{
+        .center = Vec3.init(0, -100.5, -1.0),
+        .radius = 100,
+    });
 
     // Initialize the screen image for testing
     for (0..screen_height) |y| {
@@ -69,7 +81,7 @@ pub fn main() void {
                 ),
             );
 
-            const col = color(ray);
+            const col = color(ray, world);
 
             const r = @as(u8, @trunc(col.r() * 255.99));
             const g = @as(u8, @trunc(col.g() * 255.99));

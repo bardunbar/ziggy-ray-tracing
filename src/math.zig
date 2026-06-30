@@ -84,6 +84,14 @@ pub const Vec3 = struct {
         } };
     }
 
+    pub fn divide_scalar(lhs: @This(), rhs: f32) @This() {
+        return .{ .data = .{
+            lhs.data[0] / rhs,
+            lhs.data[1] / rhs,
+            lhs.data[2] / rhs,
+        } };
+    }
+
     pub fn length(self: @This()) f32 {
         return @sqrt(self.data[0] * self.data[0] + self.data[1] * self.data[1] + self.data[2] * self.data[2]);
     }

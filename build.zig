@@ -107,18 +107,6 @@ pub fn build(b: *std.Build) void {
     // steps (e.g. a Run step, as we will see in a moment).
     const run_step = b.step("run", "Run the app");
 
-    const exe_check = b.addExecutable(.{ .name = "ziggy_ray_tracing", .root_module = b.createModule(.{
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
-    }) });
-
-    exe_check.root_module.linkLibrary(raylib_artifact);
-    exe_check.root_module.addImport("raylib", raylib);
-
-    const check = b.step("check", "Check if foo compiles");
-    check.dependOn(&exe_check.step);
-
     // This creates a RunArtifact step in the build graph. A RunArtifact step
     // invokes an executable compiled by Zig. Steps will only be executed by the
     // runner if invoked directly by the user (in the case of top level steps)
@@ -137,6 +125,18 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| {
         run_cmd.addArgs(args);
     }
+
+    const exe_check = b.addExecutable(.{ .name = "ziggy_ray_tracing", .root_module = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    }) });
+
+    exe_check.root_module.linkLibrary(raylib_artifact);
+    exe_check.root_module.addImport("raylib", raylib);
+
+    const check = b.step("check", "Check if zig compiles");
+    check.dependOn(&exe_check.step);
 
     // Creates an executable that will run `test` blocks from the provided module.
     // Here `mod` needs to define a target, which is why earlier we made sure to
