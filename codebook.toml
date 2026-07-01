@@ -1,1 +1,4 @@
-words = ["prng"]
+words = [
+    "Lambertian",
+    "prng",
+]

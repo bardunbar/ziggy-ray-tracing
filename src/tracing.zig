@@ -1,6 +1,8 @@
 const std = @import("std");
-const math = @import("math.zig");
+const material = @import("material.zig");
+const Material = material.Material;
 
+const math = @import("math.zig");
 const Vec3 = math.Vec3;
 const Ray = math.Ray;
 
@@ -8,12 +10,14 @@ pub const HitRecord = struct {
     t: f32,
     p: Vec3,
     normal: Vec3,
+    material: Material,
 
     pub fn init() @This() {
         return .{
             .t = 0.0,
             .p = Vec3.zero(),
             .normal = Vec3.zero(),
+            .material = Material.init_empty(),
         };
     }
 };
@@ -21,11 +25,13 @@ pub const HitRecord = struct {
 pub const Sphere = struct {
     center: Vec3,
     radius: f32,
+    material: Material,
 
-    pub fn init(cen: Vec3, r: f32) @This() {
+    pub fn init(cen: Vec3, r: f32, mat: Material) @This() {
         return .{
             .center = cen,
             .radius = r,
+            .material = mat,
         };
     }
 
@@ -42,6 +48,7 @@ pub const Sphere = struct {
                 record.t = temp;
                 record.p = ray.evaluate(record.t);
                 record.normal = Vec3.divide_scalar(Vec3.subtract(record.p, self.center), self.radius);
+                record.material = self.material;
                 return true;
             }
 
@@ -50,6 +57,7 @@ pub const Sphere = struct {
                 record.t = temp;
                 record.p = ray.evaluate(record.t);
                 record.normal = Vec3.divide_scalar(Vec3.subtract(record.p, self.center), self.radius);
+                record.material = self.material;
                 return true;
             }
         }
@@ -66,18 +74,26 @@ pub const World = struct {
 
     pub fn init() @This() {
         return .{
-            .spheres = comptime std.mem.zeroes([MAX_OBJECT_COUNT]Sphere),
+            .spheres = [_]Sphere{
+                .{
+                    .center = Vec3.zero(),
+                    .radius = 0.0,
+                    .material = .{
+                        .lambertian = .{ .albedo = Vec3.zero() },
+                    },
+                },
+            } ** MAX_OBJECT_COUNT,
             .sphere_count = 0,
         };
     }
 
     pub fn trace(self: @This(), ray: Ray, record: *HitRecord) bool {
-        const t_max = std.math.floatMax(f32);
+        const t_max = comptime std.math.floatMax(f32);
         var hit_anything = false;
         var closest = t_max;
 
         for (0..self.sphere_count) |i| {
-            if (self.spheres[i].hit(ray, 0.0, closest, record)) {
+            if (self.spheres[i].hit(ray, 0.001, closest, record)) {
                 hit_anything = true;
                 closest = record.t;
             }

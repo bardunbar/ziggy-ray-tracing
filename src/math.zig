@@ -1,3 +1,8 @@
+const std = @import("std");
+const Prng = std.Random.DefaultPrng;
+
+pub var prng = Prng.init(0);
+
 pub const Vec3 = struct {
     data: [3]f32,
 
@@ -122,6 +127,34 @@ pub const Vec3 = struct {
             -(lhs.data[0] * rhs.data[2] - lhs.data[2] * rhs.data[0]),
             lhs.data[0] * rhs.data[1] - lhs.data[1] * rhs.data[0],
         } };
+    }
+
+    pub fn random_in_unit_sphere() Vec3 {
+        var random_vec = Vec3.init(
+            prng.random().float(f32) * 2.0 - 1.0,
+            prng.random().float(f32) * 2.0 - 1.0,
+            prng.random().float(f32) * 2.0 - 1.0,
+        );
+
+        while (random_vec.length_squared() > 1) {
+            random_vec = Vec3.init(
+                prng.random().float(f32) * 2.0 - 1.0,
+                prng.random().float(f32) * 2.0 - 1.0,
+                prng.random().float(f32) * 2.0 - 1.0,
+            );
+        }
+
+        return random_vec;
+    }
+
+    pub fn reflect(v: @This(), n: @This()) @This() {
+        return Vec3.subtract(
+            v,
+            Vec3.multiply_scalar(
+                n,
+                2.0 * Vec3.dot(v, n),
+            ),
+        );
     }
 };
 
