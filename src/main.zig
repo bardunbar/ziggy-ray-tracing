@@ -54,7 +54,7 @@ fn color(r: Ray, world: World, depth: u8) Vec3 {
 pub fn main() void {
     const screen_width = 1000;
     const screen_height = 500;
-    const sample_count = 100;
+    const sample_count = 10;
 
     var prng = std.Random.DefaultPrng.init(0);
 
@@ -97,10 +97,7 @@ pub fn main() void {
         .center = Vec3.init(-1.0, 0.0, -1.0),
         .radius = 0.5,
         .material = Material{
-            .metal = .{
-                .albedo = Vec3.init(0.8, 0.8, 0.8),
-                .fuzz = 0.3,
-            },
+            .dielectric = .{ .refractive_index = 1.5 },
         },
     });
     const cam = Camera{

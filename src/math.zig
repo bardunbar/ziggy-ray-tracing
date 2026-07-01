@@ -156,6 +156,24 @@ pub const Vec3 = struct {
             ),
         );
     }
+
+    pub fn refract(v: @This(), n: @This(), ni_over_nt: f32, refracted: *@This()) bool {
+        const uv = v.normalized();
+        const dt = Vec3.dot(uv, n);
+        const discriminant = 1.0 - ni_over_nt * ni_over_nt * (1.0 - dt * dt);
+        if (discriminant > 0) {
+            refracted.* = Vec3.subtract(
+                Vec3.multiply_scalar(
+                    Vec3.subtract(uv, Vec3.multiply_scalar(n, dt)),
+                    ni_over_nt,
+                ),
+                Vec3.multiply_scalar(n, @sqrt(discriminant)),
+            );
+            return true;
+        } else {
+            return false;
+        }
+    }
 };
 
 pub const Ray = struct {
