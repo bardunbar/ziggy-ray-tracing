@@ -51,10 +51,12 @@ fn color(r: Ray, world: World, depth: u8) Vec3 {
     }
 }
 
-pub fn main() void {
+pub fn main(init: std.process.Init) void {
+    const io = init.io;
+
     const screen_width = 1024;
     const screen_height = screen_width / 2;
-    const sample_count = 100;
+    const sample_count = 10;
 
     var prng = std.Random.DefaultPrng.init(0);
 
@@ -87,40 +89,75 @@ pub fn main() void {
         dist_to_focus,
     );
 
-    // Initialize the screen image for testing
-    for (0..screen_height) |y| {
-        for (0..screen_width) |x| {
-            var col = Vec3.splat(0);
-            for (0..sample_count) |_| {
-                const u = (@as(f32, @floatFromInt(x)) + prng.random().float(f32)) / @as(f32, @floatFromInt(screen_width));
-                const v = (@as(f32, @floatFromInt(y)) + prng.random().float(f32)) / @as(f32, @floatFromInt(screen_height));
-                const ray = cam.get_ray(u, v);
-                col = Vec3.add(col, color(ray, world, 0));
-            }
-
-            col = Vec3.divide_scalar(col, @as(f32, @floatFromInt(sample_count)));
-            // Do gamma correction
-            col = Vec3.init(@sqrt(col.r()), @sqrt(col.g()), @sqrt(col.b()));
-
-            const r = @as(u8, @trunc(col.r() * 255.99));
-            const g = @as(u8, @trunc(col.g() * 255.99));
-            const b = @as(u8, @trunc(col.b() * 255.99));
-
-            rl.imageDrawPixel(
-                &screenImage,
-                @intCast(x),
-                @intCast(y),
-                rl.Color.init(r, g, b, 255),
-            );
-        }
-    }
+    var cache_y: usize = 0;
+    var cache_x: usize = 0;
 
     const screenTexture = rl.loadTextureFromImage(screenImage) catch {
         return;
     };
     defer rl.unloadTexture(screenTexture);
 
+    rl.traceLog(rl.TraceLogLevel.info, "Starting Raytrace", .{});
+    var render_done = false;
+    //const render_start = std.Io.Clock.awake.now(io);
+
     while (!rl.windowShouldClose()) {
+        if (!render_done) {
+            const frame_start = std.Io.Clock.awake.now(io);
+            var timeslice_elapsed = false;
+            // Update the texture a bit each frame based on the desired frame rate
+            for (cache_y..screen_height) |y| {
+                for (cache_x..screen_width) |x| {
+                    const frame_current = std.Io.Clock.awake.now(io);
+                    const elapsed = frame_start.durationTo(frame_current);
+                    timeslice_elapsed = elapsed.toMicroseconds() > 100000;
+                    if (timeslice_elapsed) {
+                        break;
+                    }
+
+                    var col = Vec3.splat(0);
+                    for (0..sample_count) |_| {
+                        const u = (@as(f32, @floatFromInt(x)) + prng.random().float(f32)) / @as(f32, @floatFromInt(screen_width));
+                        const v = (@as(f32, @floatFromInt(y)) + prng.random().float(f32)) / @as(f32, @floatFromInt(screen_height));
+                        const ray = cam.get_ray(u, v);
+                        col = Vec3.add(col, color(ray, world, 0));
+                    }
+
+                    col = Vec3.divide_scalar(col, @as(f32, @floatFromInt(sample_count)));
+                    // Do gamma correction
+                    col = Vec3.init(@sqrt(col.r()), @sqrt(col.g()), @sqrt(col.b()));
+
+                    const r = @as(u8, @trunc(col.r() * 255.99));
+                    const g = @as(u8, @trunc(col.g() * 255.99));
+                    const b = @as(u8, @trunc(col.b() * 255.99));
+
+                    rl.imageDrawPixel(
+                        &screenImage,
+                        @intCast(x),
+                        @intCast(y),
+                        rl.Color.init(r, g, b, 255),
+                    );
+
+                    cache_x = x + 1;
+                }
+
+                if (timeslice_elapsed) {
+                    break;
+                }
+
+                cache_y = y + 1;
+                cache_x = 0;
+            }
+
+            rl.updateTexture(screenTexture, screenImage.data);
+
+            if (!timeslice_elapsed) {
+                render_done = true;
+                //const render_done_timestamp = std.Io.Clock.awake.now(io);
+                //const render_duration = render_start.durationTo(render_done_timestamp);
+            }
+        }
+
         {
             rl.beginDrawing();
             defer rl.endDrawing();
