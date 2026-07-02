@@ -100,12 +100,20 @@ pub fn main() void {
             .dielectric = .{ .refractive_index = 1.5 },
         },
     });
-    const cam = Camera{
-        .upper_left_corner = Vec3.init(-2.0, 1.0, -1.0),
-        .horizontal = Vec3.init(4.0, 0.0, 0.0),
-        .vertical = Vec3.init(0.0, -2.0, 0.0),
-        .origin = Vec3.splat(0.0),
-    };
+
+    const look_from = Vec3.init(-2.0, 2.0, 1.0);
+    const look_at = Vec3.init(0.0, 0.0, -1.0);
+    const up = Vec3.init(0.0, 1.0, 0.0);
+
+    const cam = Camera.init(
+        look_from,
+        look_at,
+        up,
+        45.0,
+        @as(f32, @floatFromInt(screen_width)) / @as(f32, @floatFromInt(screen_height)),
+    );
+
+    std.debug.print("Camera Struct: {}\n", .{cam});
 
     // Initialize the screen image for testing
     for (0..screen_height) |y| {
