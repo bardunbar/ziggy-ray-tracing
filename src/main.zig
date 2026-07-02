@@ -52,9 +52,9 @@ fn color(r: Ray, world: World, depth: u8) Vec3 {
 }
 
 pub fn main() void {
-    const screen_width = 1000;
-    const screen_height = 500;
-    const sample_count = 10;
+    const screen_width = 1024;
+    const screen_height = screen_width / 2;
+    const sample_count = 100;
 
     var prng = std.Random.DefaultPrng.init(0);
 
@@ -69,51 +69,23 @@ pub fn main() void {
 
     var world = tracing.World.init();
 
-    const lambert_red = Material{
-        .lambertian = .{ .albedo = Vec3.init(0.8, 0.3, 0.3) },
-    };
+    world.initialize_cover_scene();
 
-    const metal_yellow = Material{ .metal = .{ .albedo = Vec3.init(0.8, 0.6, 0.2), .fuzz = 1.0 } };
-
-    world.add_sphere(.{
-        .center = Vec3.init(0.0, 0.0, -1.0),
-        .radius = 0.5,
-        .material = lambert_red,
-    });
-
-    world.add_sphere(.{
-        .center = Vec3.init(0, -100.5, -1.0),
-        .radius = 100,
-        .material = Material{
-            .lambertian = .{
-                .albedo = Vec3.init(0.8, 0.8, 0.3),
-            },
-        },
-    });
-
-    world.add_sphere(.{ .center = Vec3.init(1.0, 0.0, -1.0), .radius = 0.5, .material = metal_yellow });
-
-    world.add_sphere(.{
-        .center = Vec3.init(-1.0, 0.0, -1.0),
-        .radius = 0.5,
-        .material = Material{
-            .dielectric = .{ .refractive_index = 1.5 },
-        },
-    });
-
-    const look_from = Vec3.init(-2.0, 2.0, 1.0);
-    const look_at = Vec3.init(0.0, 0.0, -1.0);
+    const look_from = Vec3.init(12.0, 2.0, 3.0);
+    const look_at = Vec3.init(0.0, 0.5, 0.0);
+    const dist_to_focus = Vec3.subtract(look_from, look_at).length();
+    const aperture: f32 = 0.25;
     const up = Vec3.init(0.0, 1.0, 0.0);
 
     const cam = Camera.init(
         look_from,
         look_at,
         up,
-        45.0,
+        20.0,
         @as(f32, @floatFromInt(screen_width)) / @as(f32, @floatFromInt(screen_height)),
+        aperture,
+        dist_to_focus,
     );
-
-    std.debug.print("Camera Struct: {}\n", .{cam});
 
     // Initialize the screen image for testing
     for (0..screen_height) |y| {

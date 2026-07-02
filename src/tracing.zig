@@ -66,7 +66,11 @@ pub const Sphere = struct {
     }
 };
 
-const MAX_OBJECT_COUNT: usize = 128;
+const MAX_OBJECT_COUNT: usize = 512;
+
+fn random_f32() f32 {
+    return math.prng.random().float(f32);
+}
 
 pub const World = struct {
     spheres: [MAX_OBJECT_COUNT]Sphere,
@@ -85,6 +89,85 @@ pub const World = struct {
             } ** MAX_OBJECT_COUNT,
             .sphere_count = 0,
         };
+    }
+
+    pub fn initialize_cover_scene(self: *@This()) void {
+        self.add_sphere(.{
+            .center = Vec3.init(0, -1000, 0),
+            .radius = 1000,
+            .material = .{
+                .lambertian = .{ .albedo = Vec3.init(0.5, 0.5, 0.5) },
+            },
+        });
+
+        self.add_sphere(.{
+            .center = Vec3.init(0.0, 1.0, 0.0),
+            .radius = 1.0,
+            .material = .{ .dielectric = .{ .refractive_index = 1.5 } },
+        });
+
+        self.add_sphere(.{
+            .center = Vec3.init(-4.0, 1.0, 0.0),
+            .radius = 1.0,
+            .material = .{
+                .lambertian = .{ .albedo = Vec3.init(0.4, 0.2, 0.1) },
+            },
+        });
+
+        self.add_sphere(.{
+            .center = Vec3.init(4.0, 1.0, 0.0),
+            .radius = 1.0,
+            .material = .{
+                .metal = .{ .albedo = Vec3.init(0.7, 0.6, 0.5), .fuzz = 0.0 },
+            },
+        });
+
+        for (0..22) |a| {
+            for (0..22) |b| {
+                const select_material = random_f32();
+                const center = Vec3.init(
+                    @as(f32, @floatFromInt(a)) - 11 + 0.9 * random_f32(),
+                    0.2,
+                    @as(f32, @floatFromInt(b)) - 11 + 0.9 * random_f32(),
+                );
+                if (Vec3.subtract(center, Vec3.init(4, 0.2, 0)).length() > 0.9) {
+                    if (select_material < 0.8) {
+                        self.add_sphere(.{
+                            .center = center,
+                            .radius = 0.2,
+                            .material = .{
+                                .lambertian = .{
+                                    .albedo = Vec3.init(
+                                        random_f32() * random_f32(),
+                                        random_f32() * random_f32(),
+                                        random_f32() * random_f32(),
+                                    ),
+                                },
+                            },
+                        });
+                    } else if (select_material < 0.94) {
+                        self.add_sphere(.{
+                            .center = center,
+                            .radius = 0.2,
+                            .material = .{
+                                .metal = .{
+                                    .albedo = Vec3.init(
+                                        0.5 * (1 + random_f32()),
+                                        0.5 * (1 + random_f32()),
+                                        0.5 * (1 + random_f32()),
+                                    ),
+                                    .fuzz = 0.5 * random_f32(),
+                                },
+                            },
+                        });
+                    } else {
+                        self.add_sphere(.{ .center = center, .radius = 0.2, .material = .{ .dielectric = .{
+                            .refractive_index = 1.5,
+                        } } });
+                    }
+                }
+            }
+        }
     }
 
     pub fn trace(self: @This(), ray: Ray, record: *HitRecord) bool {
