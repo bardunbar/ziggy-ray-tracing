@@ -55,7 +55,7 @@ fn color(r: Ray, world: *const World, depth: u8) Vec3 {
 
 const desired_screen_width = 1024;
 const desired_screen_height = 512;
-const tile_dim = 96;
+const tile_dim = 32;
 const sample_count = 10;
 
 const screen_tile_width = desired_screen_width / tile_dim;
@@ -73,6 +73,8 @@ const RenderJob = struct {
     camera: *const Camera,
     world: *const World,
     prng: std.Random.DefaultPrng,
+    previous_samples: usize,
+    current_samples: usize,
 
     pub fn render(self: *@This()) void {
         const sx = @as(usize, @intFromFloat(self.rect.x));
@@ -87,14 +89,14 @@ const RenderJob = struct {
                 const ix = x - sx;
 
                 var col = Vec3.splat(0);
-                for (0..sample_count) |_| {
+                for (0..self.current_samples) |_| {
                     const u = (@as(f32, @floatFromInt(x)) + self.prng.random().float(f32)) / screen_width_float;
                     const v = (@as(f32, @floatFromInt(y)) + self.prng.random().float(f32)) / screen_height_float;
                     const ray = self.camera.get_ray(u, v);
                     col = Vec3.add(col, color(ray, self.world, 0));
                 }
 
-                col = Vec3.divide_scalar(col, @as(f32, @floatFromInt(sample_count)));
+                col = Vec3.divide_scalar(col, @as(f32, @floatFromInt(self.current_samples)));
                 // Do gamma correction
                 col = Vec3.init(@sqrt(col.r()), @sqrt(col.g()), @sqrt(col.b()));
 
@@ -107,11 +109,27 @@ const RenderJob = struct {
                 };
                 defer self.tile.mutex.unlock(self.io);
 
+                var image_color = rl.getImageColor(self.tile.image, @intCast(ix), @intCast(iy));
+
+                if (self.previous_samples > 0) {
+                    const total_samples = @as(f32, @floatFromInt(self.previous_samples + self.current_samples));
+                    const ratio_current = @as(f32, @floatFromInt(self.current_samples)) / total_samples;
+                    const ratio_previous = @as(f32, @floatFromInt(self.previous_samples)) / total_samples;
+                    image_color.r = @as(u8, @trunc(@as(f32, @floatFromInt(r)) * ratio_current)) + @as(u8, @trunc(@as(f32, @floatFromInt(image_color.r)) * ratio_previous));
+                    image_color.g = @as(u8, @trunc(@as(f32, @floatFromInt(g)) * ratio_current)) + @as(u8, @trunc(@as(f32, @floatFromInt(image_color.g)) * ratio_previous));
+                    image_color.b = @as(u8, @trunc(@as(f32, @floatFromInt(b)) * ratio_current)) + @as(u8, @trunc(@as(f32, @floatFromInt(image_color.b)) * ratio_previous));
+                } else {
+                    image_color.r = r;
+                    image_color.g = g;
+                    image_color.b = b;
+                    image_color.a = 255;
+                }
+
                 rl.imageDrawPixel(
                     &self.tile.image,
                     @intCast(ix),
                     @intCast(iy),
-                    rl.Color.init(r, g, b, 255),
+                    image_color,
                 );
             }
         }
@@ -181,16 +199,31 @@ pub fn main(init: std.process.Init) !void {
     var render_queue = try std.ArrayList(RenderJob).initCapacity(gpa, tiles.tiles.items.len);
     defer render_queue.deinit(gpa);
 
-    for (0..tiles.tiles.items.len) |i| {
-        const cur = &tiles.tiles.items[i];
-        try render_queue.append(gpa, RenderJob{
-            .tile = cur,
-            .rect = cur.rect(),
-            .io = io,
-            .camera = &cam,
-            .world = &world,
-            .prng = std.Random.DefaultPrng.init(prng.random().int(u64)),
-        });
+    const iterations = 13;
+    var total = std.math.shl(usize, 1, iterations) - 1;
+
+    std.debug.print("Total Samples: {}\n", .{total});
+    for (0..iterations) |iteration| {
+        const current_shift = (iterations - iteration - 1);
+        const current_samples = std.math.shl(usize, 1, current_shift);
+        const previous_samples = total - current_samples;
+
+        std.debug.print("Iteration {}: current samples ({}), previous samples({})\n", .{ current_shift, current_samples, previous_samples });
+        for (0..tiles.tiles.items.len) |i| {
+            const cur = &tiles.tiles.items[i];
+            try render_queue.append(gpa, RenderJob{
+                .tile = cur,
+                .rect = cur.rect(),
+                .io = io,
+                .camera = &cam,
+                .world = &world,
+                .prng = std.Random.DefaultPrng.init(prng.random().int(u64)),
+                .previous_samples = previous_samples,
+                .current_samples = current_samples,
+            });
+        }
+
+        total = previous_samples;
     }
 
     const available_cores = (std.Thread.getCpuCount() catch 2) - 1;
