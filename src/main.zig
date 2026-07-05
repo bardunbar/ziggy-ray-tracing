@@ -53,10 +53,18 @@ fn color(r: Ray, world: *const World, depth: u8) Vec3 {
     }
 }
 
-const tile_dim = 32;
-const screen_width = tile_dim * 32;
-const screen_height = tile_dim * 16;
-const sample_count = 100;
+const desired_screen_width = 1024;
+const desired_screen_height = 512;
+const tile_dim = 96;
+const sample_count = 10;
+
+const screen_tile_width = desired_screen_width / tile_dim;
+const screen_tile_height = desired_screen_height / tile_dim;
+const screen_width = screen_tile_width * tile_dim;
+const screen_height = screen_tile_height * tile_dim;
+
+const screen_width_float = @as(f32, @floatFromInt(screen_width));
+const screen_height_float = @as(f32, @floatFromInt(screen_height));
 
 const RenderJob = struct {
     tile: *tile.Tile,
@@ -80,8 +88,8 @@ const RenderJob = struct {
 
                 var col = Vec3.splat(0);
                 for (0..sample_count) |_| {
-                    const u = (@as(f32, @floatFromInt(x)) + self.prng.random().float(f32)) / @as(f32, @floatFromInt(screen_width));
-                    const v = (@as(f32, @floatFromInt(y)) + self.prng.random().float(f32)) / @as(f32, @floatFromInt(screen_height));
+                    const u = (@as(f32, @floatFromInt(x)) + self.prng.random().float(f32)) / screen_width_float;
+                    const v = (@as(f32, @floatFromInt(y)) + self.prng.random().float(f32)) / screen_height_float;
                     const ray = self.camera.get_ray(u, v);
                     col = Vec3.add(col, color(ray, self.world, 0));
                 }
@@ -142,7 +150,11 @@ pub fn main(init: std.process.Init) !void {
     const screenImage = rl.genImageColor(screen_width, screen_width, rl.Color.black);
     defer rl.unloadImage(screenImage);
 
-    var tiles = try tile.TileSet.init(32, 16, 32, gpa);
+    std.debug.print("Desired Screen Size: {} x {}\n", .{ desired_screen_width, desired_screen_height });
+    std.debug.print("Actual Screen Size: {} x {}\n", .{ screen_width, screen_height });
+    std.debug.print("Tile size: {}\nTile Map Dimensions: {} x {}\n", .{ tile_dim, screen_tile_width, screen_tile_height });
+
+    var tiles = try tile.TileSet.init(screen_tile_width, screen_tile_height, tile_dim, gpa);
     defer tiles.deinit();
 
     var world = tracing.World.init();
@@ -222,9 +234,14 @@ pub fn main(init: std.process.Init) !void {
                 const render_timestamp = std.Io.Clock.awake.now(io);
                 const render_time = render_start.durationTo(render_timestamp);
 
-                std.debug.print("Render Complete in: {f}", .{render_time});
+                std.debug.print("Render Complete in: {f}\n", .{render_time});
+
+                var result_image = try rl.loadImageFromTexture(screenTexture);
+                defer rl.unloadImage(result_image);
+
+                rl.imageCrop(&result_image, rl.Rectangle.init(0.0, 0.0, screen_width_float, screen_height_float));
+                _ = rl.exportImage(result_image, "result.png");
             }
-            render_done = active_jobs == 0;
 
             // Sleep to let the threads work
             try std.Io.sleep(io, .fromMilliseconds(100), .awake);
