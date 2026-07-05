@@ -10,14 +10,14 @@ pub const HitRecord = struct {
     t: f32,
     p: Vec3,
     normal: Vec3,
-    material: Material,
+    material: Material = Material.init_empty(),
 
     pub fn init() @This() {
         return .{
             .t = 0.0,
             .p = Vec3.zero(),
             .normal = Vec3.zero(),
-            .material = Material.init_empty(),
+            //.material = Material.init_empty(),
         };
     }
 };
@@ -73,7 +73,7 @@ fn random_f32() f32 {
 }
 
 pub const World = struct {
-    spheres: [MAX_OBJECT_COUNT]Sphere,
+    spheres: [MAX_OBJECT_COUNT]Sphere, // = std.mem.zeroes([MAX_OBJECT_COUNT]Sphere),
     sphere_count: usize,
 
     pub fn init() @This() {

@@ -15,6 +15,8 @@ const Camera = camera.Camera;
 const material = @import("material.zig");
 const Material = material.Material;
 
+const tile = @import("tile.zig");
+
 fn hit_sphere(center: Vec3, radius: f32, r: Ray) f32 {
     const oc = Vec3.subtract(r.origin(), center);
     const a = Vec3.dot(r.direction(), r.direction());
@@ -29,7 +31,7 @@ fn hit_sphere(center: Vec3, radius: f32, r: Ray) f32 {
     }
 }
 
-fn color(r: Ray, world: World, depth: u8) Vec3 {
+fn color(r: Ray, world: *const World, depth: u8) Vec3 {
     var record = HitRecord.init();
 
     if (world.trace(r, &record)) {
@@ -51,12 +53,83 @@ fn color(r: Ray, world: World, depth: u8) Vec3 {
     }
 }
 
-pub fn main(init: std.process.Init) void {
-    const io = init.io;
+const tile_dim = 32;
+const screen_width = tile_dim * 32;
+const screen_height = tile_dim * 16;
+const sample_count = 100;
 
-    const screen_width = 1024;
-    const screen_height = screen_width / 2;
-    const sample_count = 10;
+const RenderJob = struct {
+    tile: *tile.Tile,
+    rect: rl.Rectangle,
+    io: std.Io,
+    camera: *const Camera,
+    world: *const World,
+    prng: std.Random.DefaultPrng,
+
+    pub fn render(self: *@This()) void {
+        const sx = @as(usize, @intFromFloat(self.rect.x));
+        const sy = @as(usize, @intFromFloat(self.rect.y));
+        const ex = sx + @as(usize, @intFromFloat(self.rect.width));
+        const ey = sy + @as(usize, @intFromFloat(self.rect.height));
+
+        for (sy..ey) |y| {
+            const iy = y - sy;
+
+            for (sx..ex) |x| {
+                const ix = x - sx;
+
+                var col = Vec3.splat(0);
+                for (0..sample_count) |_| {
+                    const u = (@as(f32, @floatFromInt(x)) + self.prng.random().float(f32)) / @as(f32, @floatFromInt(screen_width));
+                    const v = (@as(f32, @floatFromInt(y)) + self.prng.random().float(f32)) / @as(f32, @floatFromInt(screen_height));
+                    const ray = self.camera.get_ray(u, v);
+                    col = Vec3.add(col, color(ray, self.world, 0));
+                }
+
+                col = Vec3.divide_scalar(col, @as(f32, @floatFromInt(sample_count)));
+                // Do gamma correction
+                col = Vec3.init(@sqrt(col.r()), @sqrt(col.g()), @sqrt(col.b()));
+
+                const r = @as(u8, @trunc(col.r() * 255.99));
+                const g = @as(u8, @trunc(col.g() * 255.99));
+                const b = @as(u8, @trunc(col.b() * 255.99));
+
+                self.tile.mutex.lock(self.io) catch {
+                    return;
+                };
+                defer self.tile.mutex.unlock(self.io);
+
+                rl.imageDrawPixel(
+                    &self.tile.image,
+                    @intCast(ix),
+                    @intCast(iy),
+                    rl.Color.init(r, g, b, 255),
+                );
+            }
+        }
+    }
+};
+
+fn worker(queue: *std.ArrayList(RenderJob), mutex: *std.Io.Mutex, remaining_work: *std.atomic.Value(usize), io: std.Io) !void {
+    try mutex.lock(io);
+    var job = queue.pop();
+    mutex.unlock(io);
+
+    while (job) |*work| {
+        work.render();
+
+        try mutex.lock(io);
+        defer mutex.unlock(io);
+        job = queue.pop();
+    }
+
+    const current_work = remaining_work.load(std.builtin.AtomicOrder.acquire);
+    remaining_work.store(current_work - 1, std.builtin.AtomicOrder.release);
+}
+
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
+    const gpa = init.gpa;
 
     var prng = std.Random.DefaultPrng.init(0);
 
@@ -66,8 +139,11 @@ pub fn main(init: std.process.Init) void {
     rl.initWindow(screen_width, screen_height, "Ziggy Ray Tracing!");
     defer rl.closeWindow();
 
-    var screenImage = rl.genImageColor(screen_width, screen_width, rl.Color.black);
+    const screenImage = rl.genImageColor(screen_width, screen_width, rl.Color.black);
     defer rl.unloadImage(screenImage);
+
+    var tiles = try tile.TileSet.init(32, 16, 32, gpa);
+    defer tiles.deinit();
 
     var world = tracing.World.init();
 
@@ -89,8 +165,37 @@ pub fn main(init: std.process.Init) void {
         dist_to_focus,
     );
 
-    var cache_y: usize = 0;
-    var cache_x: usize = 0;
+    var render_queue_mutex = std.Io.Mutex.init;
+    var render_queue = try std.ArrayList(RenderJob).initCapacity(gpa, tiles.tiles.items.len);
+    defer render_queue.deinit(gpa);
+
+    for (0..tiles.tiles.items.len) |i| {
+        const cur = &tiles.tiles.items[i];
+        try render_queue.append(gpa, RenderJob{
+            .tile = cur,
+            .rect = cur.rect(),
+            .io = io,
+            .camera = &cam,
+            .world = &world,
+            .prng = std.Random.DefaultPrng.init(prng.random().int(u64)),
+        });
+    }
+
+    const available_cores = (std.Thread.getCpuCount() catch 2) - 1;
+    var active_render_cores = std.atomic.Value(usize).init(0);
+
+    for (0..available_cores) |_| {
+        const current_active = active_render_cores.load(std.builtin.AtomicOrder.acquire);
+        active_render_cores.store(current_active + 1, std.builtin.AtomicOrder.release);
+
+        const job = try std.Thread.spawn(
+            .{ .allocator = gpa, .stack_size = 1024 },
+            worker,
+            .{ &render_queue, &render_queue_mutex, &active_render_cores, io },
+        );
+
+        job.detach();
+    }
 
     const screenTexture = rl.loadTextureFromImage(screenImage) catch {
         return;
@@ -99,63 +204,30 @@ pub fn main(init: std.process.Init) void {
 
     rl.traceLog(rl.TraceLogLevel.info, "Starting Raytrace", .{});
     var render_done = false;
-    //const render_start = std.Io.Clock.awake.now(io);
+    const render_start = std.Io.Clock.awake.now(io);
 
     while (!rl.windowShouldClose()) {
         if (!render_done) {
-            const frame_start = std.Io.Clock.awake.now(io);
-            var timeslice_elapsed = false;
-            // Update the texture a bit each frame based on the desired frame rate
-            for (cache_y..screen_height) |y| {
-                for (cache_x..screen_width) |x| {
-                    const frame_current = std.Io.Clock.awake.now(io);
-                    const elapsed = frame_start.durationTo(frame_current);
-                    timeslice_elapsed = elapsed.toMicroseconds() > 100000;
-                    if (timeslice_elapsed) {
-                        break;
-                    }
+            // Update tile data
+            for (tiles.tiles.items) |*cur| {
+                try cur.mutex.lock(io);
+                defer cur.mutex.unlock(io);
 
-                    var col = Vec3.splat(0);
-                    for (0..sample_count) |_| {
-                        const u = (@as(f32, @floatFromInt(x)) + prng.random().float(f32)) / @as(f32, @floatFromInt(screen_width));
-                        const v = (@as(f32, @floatFromInt(y)) + prng.random().float(f32)) / @as(f32, @floatFromInt(screen_height));
-                        const ray = cam.get_ray(u, v);
-                        col = Vec3.add(col, color(ray, world, 0));
-                    }
-
-                    col = Vec3.divide_scalar(col, @as(f32, @floatFromInt(sample_count)));
-                    // Do gamma correction
-                    col = Vec3.init(@sqrt(col.r()), @sqrt(col.g()), @sqrt(col.b()));
-
-                    const r = @as(u8, @trunc(col.r() * 255.99));
-                    const g = @as(u8, @trunc(col.g() * 255.99));
-                    const b = @as(u8, @trunc(col.b() * 255.99));
-
-                    rl.imageDrawPixel(
-                        &screenImage,
-                        @intCast(x),
-                        @intCast(y),
-                        rl.Color.init(r, g, b, 255),
-                    );
-
-                    cache_x = x + 1;
-                }
-
-                if (timeslice_elapsed) {
-                    break;
-                }
-
-                cache_y = y + 1;
-                cache_x = 0;
+                rl.updateTextureRec(screenTexture, cur.rect(), cur.image.data);
             }
 
-            rl.updateTexture(screenTexture, screenImage.data);
-
-            if (!timeslice_elapsed) {
+            const active_jobs = active_render_cores.load(std.builtin.AtomicOrder.acquire);
+            if (active_jobs == 0) {
                 render_done = true;
-                //const render_done_timestamp = std.Io.Clock.awake.now(io);
-                //const render_duration = render_start.durationTo(render_done_timestamp);
+                const render_timestamp = std.Io.Clock.awake.now(io);
+                const render_time = render_start.durationTo(render_timestamp);
+
+                std.debug.print("Render Complete in: {f}", .{render_time});
             }
+            render_done = active_jobs == 0;
+
+            // Sleep to let the threads work
+            try std.Io.sleep(io, .fromMilliseconds(100), .awake);
         }
 
         {
