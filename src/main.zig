@@ -53,9 +53,9 @@ fn color(r: Ray, world: *const World, depth: u8) Vec3 {
     }
 }
 
-const desired_screen_width = 1024;
-const desired_screen_height = 512;
-const tile_dim = 32;
+const tile_dim = 96;
+const desired_screen_width = tile_dim * 12; //1024;
+const desired_screen_height = tile_dim * 8; //512;
 const sample_count = 10;
 
 const screen_tile_width = desired_screen_width / tile_dim;
